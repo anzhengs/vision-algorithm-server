@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>401实验室 · 图像处理</title>
+    <!-- 全新阳光主题，仅此一个样式入口 -->
+    <link rel="stylesheet" href="/css_files/sunny.css" />
+    <link rel="icon" href="/assets/logo.png" type="image/x-icon" />
+    <link rel="shortcut icon" href="/assets/logo.png" type="image/x-icon" />
+</head>
+<body>
+    <main class="page">
+        <section class="hero">
+            <div class="hero-mark">401 LAB</div>
+            <h1 class="hero-title">图像处理实验台</h1>
+        </section>
+
+        <section id="upload" class="card">
+            <div class="card-header">上传与处理</div>
+            <div class="card-body">
+                <form id="upload-form" method="POST" enctype="multipart/form-data">
+                    <div class="file-input-container">
+                        <input type="file" id="image-input" name="image" accept="image/*" required />
+                        <label for="image-input" class="button accent">选择图片</label>
+                        <span id="file-name" class="file-name">未选择文件</span>
+                    </div>
+
+                    <div class="image-preview-container">
+                        <img id="image-preview" src="#" alt="预览图片" style="display: none;" />
+                    </div>
+
+                    <button type="submit" class="button primary">上传图片</button>
+                </form>
+
+                <div id="upload-status" class="status"></div>
+
+                <div id="image-processing" style="display: none;" class="processing">
+                    <h2 class="section-title">选择处理方式</h2>
+                    <div id="processors" class="processor-buttons"></div>
+                    <div class="processed-preview">
+                        <h3>处理后预览</h3>
+                        <img id="processed-preview" src="#" alt="处理后预览" style="display: none;" />
+                    </div>
+                    <div id="processing-status" class="status"></div>
+                    <a id="download-link" class="button secondary" style="display: none;">下载处理后的图片</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // 全局变量存储当前上传的图片信息
+        let currentUploadedImage = null;
+
+        // 图片预览
+        document.getElementById('image-input').addEventListener('change', function(event) {
+            const fileInput = event.target;
+            const fileNameSpan = document.getElementById('file-name');
+            const imagePreview = document.getElementById('image-preview');
+
+            if (fileInput.files && fileInput.files[0]) {
+                const fileName = fileInput.files[0].name;
+                fileNameSpan.textContent = fileName;
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                };
+                reader.readAsDataURL(fileInput.files[0]);
+            } else {
+                fileNameSpan.textContent = '未选择文件';
+                imagePreview.style.display = 'none';
+            }
+        });
+
+        // 上传提交
+        document.getElementById('upload-form').addEventListener('submit', function(event) {
+            event.preventDefault();
+
+            const formData = new FormData(this);
+            const statusDiv = document.getElementById('upload-status');
+            const imageProcessingDiv = document.getElementById('image-processing');
+
+            statusDiv.innerHTML = '<p class="status-message loading">正在上传图片，请稍候...</p>';
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`服务器响应错误: ${response.status} ${response.statusText}`);
+                }
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    return response.text().then(text => {
+                        throw new Error(`服务器未返回JSON (${contentType}): ${text.substring(0, 150)}...`);
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    statusDiv.innerHTML = `<p class="status-message success">图片上传成功！</p>
+                                           <p class="status-line">图片URL: <a href="${data.url}" target="_blank">${data.url}</a></p>`;
+                    currentUploadedImage = { url: data.url, filename: data.filename };
+                    imageProcessingDiv.style.display = 'block';
+                    loadProcessors();
+                } else {
+                    statusDiv.innerHTML = `<p class="status-message error">上传失败: ${data.message}</p>`;
+                }
+            })
+            .catch(error => {
+                console.error('上传错误:', error);
+                statusDiv.innerHTML = `<p class="status-message error">上传出错: ${error.message}</p>`;
+            });
+        });
+
+        function loadProcessors() {
+            const container = document.getElementById('processors');
+            container.innerHTML = '';
+            fetch('/processors')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        data.processors.forEach(p => {
+                            const btn = document.createElement('button');
+                            btn.className = 'button chip';
+                            btn.textContent = p.label || p.id;
+                            btn.title = p.description || '';
+                            btn.addEventListener('click', () => processImage(p.id));
+                            container.appendChild(btn);
+                        });
+                    } else {
+                        container.innerHTML = '<p class="status-message error">无法加载处理器列表</p>';
+                    }
+                })
+                .catch(err => {
+                    console.error('加载处理器错误:', err);
+                    container.innerHTML = `<p class="status-message error">加载处理器失败: ${err.message}</p>`;
+                });
+        }
+
+        function processImage(processorId) {
+            if (!currentUploadedImage) {
+                alert('请先上传图片');
+                return;
+            }
+
+            const processingStatusDiv = document.getElementById('processing-status');
+            const processedPreview = document.getElementById('processed-preview');
+            const downloadLink = document.getElementById('download-link');
+
+            processingStatusDiv.innerHTML = '<p class="status-message loading">正在处理图片，请稍候...</p>';
+
+            fetch('/process', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename: currentUploadedImage.filename,
+                    processor_id: processorId,
+                    params: {}
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    processingStatusDiv.innerHTML = `<p class="status-message success">图片处理成功！</p>`;
+                    processedPreview.src = data.url;
+                    processedPreview.style.display = 'block';
+                    downloadLink.href = `/download/${data.filename}`;
+                    downloadLink.download = data.filename;
+                    downloadLink.style.display = 'inline-block';
+                } else {
+                    processingStatusDiv.innerHTML = `<p class="status-message error">处理失败: ${data.message}</p>`;
+                }
+            })
+            .catch(error => {
+                console.error('处理错误:', error);
+                processingStatusDiv.innerHTML = `<p class="status-message error">处理出错: ${error.message}</p>`;
+            });
+        }
+    </script>
+</body>
+</html>
