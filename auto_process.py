@@ -1,17 +1,22 @@
 import os
+import sys
 import time
 import subprocess
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 # 配置路径（根据你的实际环境修改）
-WATCH_DIR = "/home/sazuser/lab401/uploads"  # 待监控的图片文件夹
-RESULT_DIR = "/home/sazuser/lab401/results"  # 结果输出文件夹
-ALGORITHM_PATH = "/home/sazuser/shape_algorithm/getShapeVideo1.py"  # 算法脚本路径
-VENV_ACTIVATE = "/home/sazuser/torch-env/bin/activate"  # 虚拟环境激活脚本
+WATCH_DIR = "uploads"  # 待监控的图片文件夹
+RESULT_DIR = "result"  # 结果输出文件夹
+ALGORITHM_PATH = "getShapeVideo1.py"  # 算法脚本路径
+VENV_ACTIVATE = "/home/sazuser/torch-env/bin/activate"  # 虚拟环境激活脚本（Linux可选）
 
 # 支持的图片格式
 SUPPORTED_FORMATS = {'.jpg', '.jpeg', '.png', '.bmp'}
+
+# 保证监控与结果目录存在（相对路径基于当前工作目录）
+os.makedirs(WATCH_DIR, exist_ok=True)
+os.makedirs(RESULT_DIR, exist_ok=True)
 
 
 class NewImageHandler(FileSystemEventHandler):
@@ -51,43 +56,65 @@ class NewImageHandler(FileSystemEventHandler):
         return False  # 超时
 
     def process_image(self, image_path):
-        """调用算法处理图片并保存结果（修复shell环境问题）"""
+        """调用算法处理图片并保存结果（跨平台修复，保证路径与目录正确）"""
+        # 统一绝对路径，避免相对路径在子进程中偏移
+        file_name = os.path.splitext(os.path.basename(image_path))[0]
+        src_abs = os.path.abspath(image_path)
+        out_dir_abs = os.path.abspath(RESULT_DIR)
+        os.makedirs(out_dir_abs, exist_ok=True)
+        result_file = os.path.join(out_dir_abs, f"{file_name}_result.txt")
+
         try:
-            # 提取文件名（用于结果文件命名）
-            file_name = os.path.splitext(os.path.basename(image_path))[0]
-            result_file = os.path.join(RESULT_DIR, f"{file_name}_result.txt")
+            # Windows：直接使用当前 Python 解释器，无需 bash/conda activate
+            if os.name == 'nt':
+                cmd = [
+                    sys.executable,
+                    os.path.abspath(ALGORITHM_PATH),
+                    "--input", src_abs,
+                    "--output", result_file,
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            else:
+                # Linux/macOS：优先使用当前解释器；如需激活虚拟环境，请在启动本脚本前完成
+                cmd = [
+                    sys.executable,
+                    os.path.abspath(ALGORITHM_PATH),
+                    "--input", src_abs,
+                    "--output", result_file,
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
-            # 关键修复：用bash执行命令（支持source），并显式指定环境变量
-            cmd = f"""
-                bash -c '
-                    source {VENV_ACTIVATE} && \
-                    python {ALGORITHM_PATH} \
-                    --input "{image_path}" \
-                    --output "{result_file}"
-                '
-            """
-
-            # 执行命令并捕获输出
-            result = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True, timeout=60
-            )
-
-            if result.returncode == 0:
+            if result.returncode == 0 and os.path.exists(result_file):
                 print(f"处理成功: {image_path} → 结果保存至 {result_file}")
             else:
-                print(f"算法错误: {result.stderr}")
-                with open(result_file, "w") as f:
-                    f.write(f"错误: {result.stderr}")
+                # 优先使用 stderr；为空则回退到 stdout；都为空则未知错误
+                stderr = (result.stderr or '').strip()
+                stdout = (result.stdout or '').strip()
+                err_msg = stderr if stderr else (stdout if stdout else "未知错误")
+                print(f"算法错误: {err_msg}")
+                # 若算法已写出结果文件（例如写入了'处理失败:'的内容），不覆盖，仅在缺失时补写
+                if not (os.path.exists(result_file) and os.path.getsize(result_file) > 0):
+                    try:
+                        with open(result_file, "w", encoding="utf-8") as f:
+                            f.write(f"错误: {err_msg}")
+                    except Exception as write_err:
+                        print(f"写入错误结果失败: {write_err}")
 
         except Exception as e:
             error_msg = f"处理失败: {str(e)}"
             print(error_msg)
-            with open(result_file, "w") as f:
-                f.write(error_msg)
+            try:
+                with open(result_file, "w", encoding="utf-8") as f:
+                    f.write(error_msg)
+            except Exception as write_err:
+                print(f"写入错误结果失败: {write_err}")
 
 
 if __name__ == "__main__":
     # 启动监控
+    # 再次确保目录存在
+    os.makedirs(WATCH_DIR, exist_ok=True)
+    os.makedirs(RESULT_DIR, exist_ok=True)
     observer = Observer()
     observer.schedule(NewImageHandler(), WATCH_DIR, recursive=False)
     observer.start()
