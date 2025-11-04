@@ -15,3 +15,15 @@ results/
 # 忽略临时文件
 *.swp
 __pycache__/
+# 忽略模型文件（若体积>100MB，必加；若小则可删除这行，一起上传）
+*.pth
+*.pt
+
+# 忽略Python缓存
+__pycache__/
+*.pyc
+*.swp
+
+# 忽略日志或临时文件
+*.log
+*.tmp
