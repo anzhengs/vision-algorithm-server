@@ -8,7 +8,7 @@
 
 ## 环境依赖
 - Python 3.8+
-- 依赖包：torch、opencv-python、watchdog、flask 等（见 requirements.txt）
+- 依赖包：torch、opencv-python、watchdog、flask 等
 
 ## 使用步骤
 1. 克隆仓库：`git clone https://github.com/anzhengs/vision-algorithm-server.git`
