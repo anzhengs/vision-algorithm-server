@@ -39,4 +39,4 @@
 - 结果目录：`RESULT_DIR = 'result'`。
 - 算法脚本：`ALGORITHM_PATH = 'getShapeVideo1.py'`。
 ---
-(模型pth文件后续上传)
+
