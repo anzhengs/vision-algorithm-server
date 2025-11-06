@@ -15,10 +15,12 @@ HTML_DIR = os.path.join(BASE_DIR, 'html')
 HTML_FILES_DIR = os.path.join(HTML_DIR, 'html_files')
 CSS_DIR = os.path.join(HTML_DIR, 'css_files')
 UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
+RESULT_DIR = os.path.join(BASE_DIR, 'result')
 PROCESSORS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'processors')
 
 # Ensure upload dir exists
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(RESULT_DIR, exist_ok=True)
 
 app = Flask(__name__)
 
@@ -74,6 +76,36 @@ def serve_assets(path):
     workspace_root = os.path.dirname(os.path.dirname(BASE_DIR))  # go up to workspace root
     assets_dir = os.path.join(workspace_root, 'html', 'assets')
     return send_from_directory(assets_dir, path)
+
+
+# API: query result text by uploaded filename
+@app.route('/result', methods=['GET'])
+def get_result():
+    filename = request.args.get('filename')
+    if not filename:
+        return jsonify({'success': False, 'message': '缺少参数: filename'}), 400
+
+    # derive result file name from uploaded filename
+    base, _ = os.path.splitext(filename)
+    result_name = f"{base}_result.txt"
+    result_path = os.path.join(RESULT_DIR, result_name)
+
+    if not os.path.exists(result_path):
+        return jsonify({'success': True, 'ready': False})
+
+    try:
+        with open(result_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        mtime = os.path.getmtime(result_path)
+        return jsonify({
+            'success': True,
+            'ready': True,
+            'filename': result_name,
+            'content': content,
+            'updated_at': mtime
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'读取结果失败: {str(e)}'}), 500
 
 
 # API: list processors
