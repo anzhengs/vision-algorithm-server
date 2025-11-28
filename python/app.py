@@ -7,6 +7,10 @@ from werkzeug.utils import secure_filename
 from PIL import Image
 import importlib
 import pkgutil
+import threading
+import time
+import sys
+import subprocess
 
 
 # Paths
@@ -15,18 +19,33 @@ HTML_DIR = os.path.join(BASE_DIR, 'html')
 HTML_FILES_DIR = os.path.join(HTML_DIR, 'html_files')
 CSS_DIR = os.path.join(HTML_DIR, 'css_files')
 UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
+RESULT_DIR = os.path.join(BASE_DIR, 'result')
 PROCESSORS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'processors')
 
 # Ensure upload dir exists
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(RESULT_DIR, exist_ok=True)
 
 app = Flask(__name__)
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp'}
+queue_lock = threading.Lock()
+PROCESSED_FILES = set()
+LATEST_IMAGE = None
+LATEST_IMAGE_UPDATED_AT = 0.0
 
 
 def allowed_file(filename: str) -> bool:
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Initialize processed set after helpers are defined
+try:
+    for name in os.listdir(UPLOAD_DIR):
+        p = os.path.join(UPLOAD_DIR, name)
+        if os.path.isfile(p) and allowed_file(name):
+            PROCESSED_FILES.add(name)
+except Exception:
+    pass
 
 
 # Processor plugin system
@@ -76,6 +95,84 @@ def serve_assets(path):
     return send_from_directory(assets_dir, path)
 
 
+@app.route('/latest_image', methods=['GET'])
+def latest_image():
+    with queue_lock:
+        fname = LATEST_IMAGE
+        updated_at = LATEST_IMAGE_UPDATED_AT
+    if not fname:
+        return jsonify({'success': True, 'ready': False})
+    return jsonify({'success': True, 'ready': True, 'filename': fname, 'url': f"/uploads/{fname}", 'updated_at': updated_at})
+
+
+def _ensure_result_for(filename: str):
+    base, _ = os.path.splitext(filename)
+    result_name = f"{base}_result.txt"
+    result_path = os.path.join(RESULT_DIR, result_name)
+    if os.path.exists(result_path):
+        return
+    src_path = os.path.join(UPLOAD_DIR, filename)
+    if not os.path.exists(src_path):
+        return
+    algo_path = os.path.join(os.path.join(BASE_DIR, 'model'), 'getShapeVideo1.py')
+    try:
+        cmd = [sys.executable, algo_path, '--input', os.path.abspath(src_path), '--output', os.path.abspath(result_path)]
+        subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except Exception:
+        pass
+
+
+def _background_watch():
+    global LATEST_IMAGE, LATEST_IMAGE_UPDATED_AT
+    while True:
+        try:
+            for name in os.listdir(UPLOAD_DIR):
+                p = os.path.join(UPLOAD_DIR, name)
+                if os.path.isfile(p) and allowed_file(name):
+                    if name not in PROCESSED_FILES:
+                        _ensure_result_for(name)
+                        with queue_lock:
+                            LATEST_IMAGE = name
+                            try:
+                                LATEST_IMAGE_UPDATED_AT = os.path.getmtime(p)
+                            except Exception:
+                                LATEST_IMAGE_UPDATED_AT = time.time()
+                        PROCESSED_FILES.add(name)
+            time.sleep(1)
+        except Exception:
+            time.sleep(2)
+
+
+# API: query result text by uploaded filename
+@app.route('/result', methods=['GET'])
+def get_result():
+    filename = request.args.get('filename')
+    if not filename:
+        return jsonify({'success': False, 'message': '缺少参数: filename'}), 400
+
+    # derive result file name from uploaded filename
+    base, _ = os.path.splitext(filename)
+    result_name = f"{base}_result.txt"
+    result_path = os.path.join(RESULT_DIR, result_name)
+
+    if not os.path.exists(result_path):
+        return jsonify({'success': True, 'ready': False})
+
+    try:
+        with open(result_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        mtime = os.path.getmtime(result_path)
+        return jsonify({
+            'success': True,
+            'ready': True,
+            'filename': result_name,
+            'content': content,
+            'updated_at': mtime
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'读取结果失败: {str(e)}'}), 500
+
+
 # API: list processors
 @app.route('/processors', methods=['GET'])
 def list_processors():
@@ -91,29 +188,6 @@ def list_processors():
     })
 
 
-# API: upload image
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'image' not in request.files:
-        return jsonify({'success': False, 'message': '没有文件部分'})
-    f = request.files['image']
-    if not f.filename:
-        return jsonify({'success': False, 'message': '没有选择文件'})
-    if not allowed_file(f.filename):
-        return jsonify({'success': False, 'message': '不允许的文件类型'})
-
-    filename = secure_filename(f.filename)
-    ext = filename.rsplit('.', 1)[1].lower()
-    unique = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex}.{ext}"
-    save_path = os.path.join(UPLOAD_DIR, unique)
-    f.save(save_path)
-
-    return jsonify({
-        'success': True,
-        'message': '文件上传成功',
-        'url': f"/uploads/{unique}",
-        'filename': unique
-    })
 
 
 # API: process image by processor id
@@ -164,4 +238,6 @@ def download_file(filename):
 
 if __name__ == '__main__':
     # Run dev server for local preview
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    t = threading.Thread(target=_background_watch, daemon=True)
+    t.start()
+    app.run(host='0.0.0.0', port=5401, debug=True)

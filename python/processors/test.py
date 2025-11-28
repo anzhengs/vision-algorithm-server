@@ -8,7 +8,7 @@ def _process(img: Image.Image, params):
 
 PROCESSOR = {
     'id': 'digit_recognition',
-    'label': '数字识别（预留）',
+    'label': '数字识别',
     'description': '占位处理器：数字识别逻辑尚未接入',
     'process': _process,
 }
