@@ -27,3 +27,4 @@ __pycache__/
 # 忽略日志或临时文件
 *.log
 *.tmp
+result/
