@@ -1,187 +1,181 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>401实验室 · 图像处理</title>
-    <!-- 全新阳光主题，仅此一个样式入口 -->
-    <link rel="stylesheet" href="/css_files/sunny.css" />
-    <link rel="icon" href="/assets/logo.png" type="image/x-icon" />
-    <link rel="shortcut icon" href="/assets/logo.png" type="image/x-icon" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>图像处理实验台 | 401 LAB</title>
+  <link rel="stylesheet" href="sunny.css"> <!-- 保留原有样式 -->
+  <link rel="icon" href="favicon.ico" type="image/x-icon"> <!-- 保留原有图标 -->
+  <style>
+    /* 补充少量适配样式，不破坏原有风格 */
+    .image-preview {
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 12px 0;
+      min-height: 300px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #f9f9f9;
+    }
+    .image-preview img {
+      max-width: 100%;
+      max-height: 280px;
+      border-radius: 4px;
+    }
+    .result-content {
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 12px 0;
+      min-height: 300px;
+      background-color: #f9f9f9;
+      white-space: pre-wrap;
+      font-family: monospace;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .status-text {
+      color: #666;
+      font-size: 14px;
+      margin: 8px 0;
+    }
+  </style>
 </head>
 <body>
-    <main class="page">
-        <section class="hero">
-            <div class="hero-mark">401 LAB</div>
-            <h1 class="hero-title">图像处理实验台</h1>
-        </section>
+  <main class="page">
+    <div class="hero">
+      <h1>401 LAB</h1>
+      <p>图像处理实验台</p>
+    </div>
 
-        <section id="upload" class="card">
-            <div class="card-header">上传与处理</div>
-            <div class="card-body">
-                <form id="upload-form" method="POST" enctype="multipart/form-data">
-                    <div class="file-input-container">
-                        <input type="file" id="image-input" name="image" accept="image/*" required />
-                        <label for="image-input" class="button accent">选择图片</label>
-                        <span id="file-name" class="file-name">未选择文件</span>
-                    </div>
+    <div class="two-cols">
+      <!-- 左侧：上传与预览区域（保留原有禁用逻辑，补充自动加载） -->
+      <div class="card" id="upload">
+        <h2>相机拍摄图片</h2>
+        <form id="upload-form" onsubmit="return false;">
+          <div class="form-group">
+            <label for="file-upload">选择图片</label>
+            <input type="file" id="file-upload" accept="image/*" disabled>
+            <p class="status-text">已禁用上传，请等待主机端图片推送</p>
+          </div>
+          <div class="image-preview" id="image-preview">
+            <img id="latest-image" src="" alt="等待相机拍摄图片..." style="display: none;">
+            <span id="image-placeholder">暂无拍摄图片</span>
+          </div>
+          <div class="form-group">
+            <button type="submit" disabled>上传处理</button>
+          </div>
+        </form>
+      </div>
 
-                    <div class="image-preview-container">
-                        <img id="image-preview" src="#" alt="预览图片" style="display: none;" />
-                    </div>
+      <!-- 右侧：处理结果区域 -->
+      <div class="card" id="result">
+        <h2>识别分拣结果</h2>
+        <div class="status-text" id="result-status">等待结果加载...</div>
+        <div class="result-content" id="result-content">
+          暂无结果数据
+        </div>
+      </div>
+    </div>
+  </main>
 
-                    <button type="submit" class="button primary">上传图片</button>
-                </form>
+  <script>
+    // 全局变量：记录当前最新图片名，避免重复请求
+    let currentImageFilename = '';
+    // 超时配置（120秒，和原有逻辑一致）
+    const RESULT_POLL_TIMEOUT = 120 * 1000;
+    let resultPollStartTime = null;
 
-                <div id="upload-status" class="status"></div>
+    // 1. 获取最新图片并更新预览
+    function fetchLatestImage() {
+      fetch('/latest_image')
+        .then(response => {
+          if (!response.ok) throw new Error('接口请求失败');
+          return response.json();
+        })
+        .then(data => {
+          const previewContainer = document.getElementById('image-preview');
+          const imgElement = document.getElementById('latest-image');
+          const placeholder = document.getElementById('image-placeholder');
 
-                <div id="image-processing" style="display: none;" class="processing">
-                    <h2 class="section-title">选择处理方式</h2>
-                    <div id="processors" class="processor-buttons"></div>
-                    <div class="processed-preview">
-                        <h3>处理后预览</h3>
-                        <img id="processed-preview" src="#" alt="处理后预览" style="display: none;" />
-                    </div>
-                    <div id="processing-status" class="status"></div>
-                    <a id="download-link" class="button secondary" style="display: none;">下载处理后的图片</a>
-                </div>
-            </div>
-        </section>
-    </main>
-
-    <script>
-        // 全局变量存储当前上传的图片信息
-        let currentUploadedImage = null;
-
-        // 图片预览
-        document.getElementById('image-input').addEventListener('change', function(event) {
-            const fileInput = event.target;
-            const fileNameSpan = document.getElementById('file-name');
-            const imagePreview = document.getElementById('image-preview');
-
-            if (fileInput.files && fileInput.files[0]) {
-                const fileName = fileInput.files[0].name;
-                fileNameSpan.textContent = fileName;
-
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    imagePreview.src = e.target.result;
-                    imagePreview.style.display = 'block';
-                };
-                reader.readAsDataURL(fileInput.files[0]);
-            } else {
-                fileNameSpan.textContent = '未选择文件';
-                imagePreview.style.display = 'none';
+          if (data.success && data.ready) {
+            // 有新图片时更新
+            if (currentImageFilename !== data.filename) {
+              currentImageFilename = data.filename;
+              // 显示图片，隐藏占位符
+              imgElement.src = `/uploads/${data.filename}?t=${new Date().getTime()}`; // 防缓存
+              imgElement.style.display = 'block';
+              placeholder.style.display = 'none';
+              // 重置结果超时，开始轮询结果
+              resultPollStartTime = new Date().getTime();
+              fetchResult(data.filename);
             }
+          } else {
+            // 无图片时显示占位符
+            imgElement.style.display = 'none';
+            placeholder.style.display = 'block';
+            placeholder.textContent = '暂无拍摄图片（等待主机端推送）';
+            // 清空结果
+            document.getElementById('result-status').textContent = '等待结果加载...';
+            document.getElementById('result-content').textContent = '暂无结果数据';
+            currentImageFilename = '';
+          }
+        })
+        .catch(err => {
+          console.error('获取最新图片失败：', err);
+          document.getElementById('image-placeholder').textContent = '图片加载失败，请检查后端服务';
         });
+    }
 
-        // 上传提交
-        document.getElementById('upload-form').addEventListener('submit', function(event) {
-            event.preventDefault();
+    // 2. 获取对应图片的处理结果
+    function fetchResult(filename) {
+      // 检查超时
+      if (new Date().getTime() - resultPollStartTime > RESULT_POLL_TIMEOUT) {
+        document.getElementById('result-status').textContent = '结果加载超时（120秒）';
+        document.getElementById('result-status').style.color = '#e63946';
+        return;
+      }
 
-            const formData = new FormData(this);
-            const statusDiv = document.getElementById('upload-status');
-            const imageProcessingDiv = document.getElementById('image-processing');
+      fetch(`/result?filename=${filename}`)
+        .then(response => {
+          if (!response.ok) throw new Error('结果接口请求失败');
+          return response.json();
+        })
+        .then(data => {
+          const statusElement = document.getElementById('result-status');
+          const contentElement = document.getElementById('result-content');
 
-            statusDiv.innerHTML = '<p class="status-message loading">正在上传图片，请稍候...</p>';
-
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`服务器响应错误: ${response.status} ${response.statusText}`);
-                }
-                const contentType = response.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    return response.text().then(text => {
-                        throw new Error(`服务器未返回JSON (${contentType}): ${text.substring(0, 150)}...`);
-                    });
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    statusDiv.innerHTML = `<p class="status-message success">图片上传成功！</p>
-                                           <p class="status-line">图片URL: <a href="${data.url}" target="_blank">${data.url}</a></p>`;
-                    currentUploadedImage = { url: data.url, filename: data.filename };
-                    imageProcessingDiv.style.display = 'block';
-                    loadProcessors();
-                } else {
-                    statusDiv.innerHTML = `<p class="status-message error">上传失败: ${data.message}</p>`;
-                }
-            })
-            .catch(error => {
-                console.error('上传错误:', error);
-                statusDiv.innerHTML = `<p class="status-message error">上传出错: ${error.message}</p>`;
-            });
+          if (data.success && data.ready) {
+            // 结果就绪
+            statusElement.textContent = '结果加载成功';
+            statusElement.style.color = '#2a9d8f';
+            contentElement.textContent = data.content;
+          } else {
+            // 结果处理中，继续轮询
+            statusElement.textContent = '结果处理中...';
+            statusElement.style.color = '#f4a261';
+            contentElement.textContent = '等待后端返回识别分拣结果...';
+            // 2秒后再次查询（和图片轮询频率一致）
+            setTimeout(() => fetchResult(filename), 2000);
+          }
+        })
+        .catch(err => {
+          console.error('获取结果失败：', err);
+          document.getElementById('result-status').textContent = '结果加载失败，请检查后端';
+          document.getElementById('result-status').style.color = '#e63946';
         });
+    }
 
-        function loadProcessors() {
-            const container = document.getElementById('processors');
-            container.innerHTML = '';
-            fetch('/processors')
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        data.processors.forEach(p => {
-                            const btn = document.createElement('button');
-                            btn.className = 'button chip';
-                            btn.textContent = p.label || p.id;
-                            btn.title = p.description || '';
-                            btn.addEventListener('click', () => processImage(p.id));
-                            container.appendChild(btn);
-                        });
-                    } else {
-                        container.innerHTML = '<p class="status-message error">无法加载处理器列表</p>';
-                    }
-                })
-                .catch(err => {
-                    console.error('加载处理器错误:', err);
-                    container.innerHTML = `<p class="status-message error">加载处理器失败: ${err.message}</p>`;
-                });
-        }
+    // 3. 启动轮询（每2秒刷新一次，和原有逻辑一致）
+    function startPolling() {
+      fetchLatestImage();
+      setInterval(fetchLatestImage, 2000);
+    }
 
-        function processImage(processorId) {
-            if (!currentUploadedImage) {
-                alert('请先上传图片');
-                return;
-            }
-
-            const processingStatusDiv = document.getElementById('processing-status');
-            const processedPreview = document.getElementById('processed-preview');
-            const downloadLink = document.getElementById('download-link');
-
-            processingStatusDiv.innerHTML = '<p class="status-message loading">正在处理图片，请稍候...</p>';
-
-            fetch('/process', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    filename: currentUploadedImage.filename,
-                    processor_id: processorId,
-                    params: {}
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    processingStatusDiv.innerHTML = `<p class="status-message success">图片处理成功！</p>`;
-                    processedPreview.src = data.url;
-                    processedPreview.style.display = 'block';
-                    downloadLink.href = `/download/${data.filename}`;
-                    downloadLink.download = data.filename;
-                    downloadLink.style.display = 'inline-block';
-                } else {
-                    processingStatusDiv.innerHTML = `<p class="status-message error">处理失败: ${data.message}</p>`;
-                }
-            })
-            .catch(error => {
-                console.error('处理错误:', error);
-                processingStatusDiv.innerHTML = `<p class="status-message error">处理出错: ${error.message}</p>`;
-            });
-        }
-    </script>
+    // 页面加载完成后启动轮询
+    window.onload = startPolling;
+  </script>
 </body>
 </html>
