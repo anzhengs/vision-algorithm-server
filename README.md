@@ -17,26 +17,26 @@
 - 启动后端服务：
   - 在项目根目录运行：
   - `python python/app.py`
-  - 后端默认监听 `http://0.0.0.0:5000/`。
+  - 后端默认监听 `http://0.0.0.0:5401/`。
 
 - 启动自动处理监控：
   - 在同一环境中运行：
-  - `python auto_process.py`
+  - `python app.py`
   - 监控输出类似：
     - `开始监控文件夹: uploads (按Ctrl+C停止)`
     - 新图片写入 `uploads/` 后会自动生成 `result/<文件名>_result.txt`。
 
 - 通过网页上传与处理：
-  - 打开 `http://localhost:5000/`。
+  - 打开 `http://localhost:5401/`。
   - 选择图片上传；成功后会显示图片 URL 并出现“选择处理方式”。
   - 处理器目前为占位，点击后会生成一张“处理后”图片，文件名形如：
     - `uploads/digit_recognition_<原始文件名>`（仅复制原图，用于演示流程）。
   - 自动监控脚本会侦测到该新文件，调用算法生成结果 txt 到 `result/`。
 ---
 
-**配置与路径（auto_process.py）**
+**配置与路径（app.py）**
 - 监控目录：`WATCH_DIR = 'uploads'`。
 - 结果目录：`RESULT_DIR = 'result'`。
 - 算法脚本：`ALGORITHM_PATH = 'getShapeVideo1.py'`。
 ---
-(模型pth文件后续上传)
+**PLC段调用（mainself2.py）**
