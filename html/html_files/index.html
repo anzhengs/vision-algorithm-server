@@ -4,40 +4,41 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>图像处理实验台 | 401 LAB</title>
-  <link rel="stylesheet" href="sunny.css"> <!-- 保留原有样式 -->
+  <link rel="stylesheet" href="/css_files/sunny.css"> <!-- 保留原有样式 -->
   <link rel="icon" href="favicon.ico" type="image/x-icon"> <!-- 保留原有图标 -->
   <style>
-    /* 补充少量适配样式，不破坏原有风格 */
+    /* 适配 sunny.css 的排版与视觉 */
     .image-preview {
-      border: 1px solid #eee;
-      border-radius: 8px;
+      border: 2px dashed var(--accent);
+      border-radius: 12px;
       padding: 16px;
       margin: 12px 0;
-      min-height: 300px;
+      height: 280px;
       display: flex;
       align-items: center;
       justify-content: center;
-      background-color: #f9f9f9;
+      background-color: #fffaf0;
     }
     .image-preview img {
       max-width: 100%;
-      max-height: 280px;
-      border-radius: 4px;
+      max-height: 100%;
+      border-radius: 8px;
+      object-fit: contain;
     }
     .result-content {
-      border: 1px solid #eee;
-      border-radius: 8px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
       padding: 16px;
       margin: 12px 0;
       min-height: 300px;
-      background-color: #f9f9f9;
+      background-color: #fffaf0;
       white-space: pre-wrap;
-      font-family: monospace;
-      font-size: 14px;
-      line-height: 1.5;
+      font-family: inherit;
+      font-size: 18px;
+      line-height: 1.7;
     }
     .status-text {
-      color: #666;
+      color: var(--muted);
       font-size: 14px;
       margin: 8px 0;
     }
@@ -46,36 +47,36 @@
 <body>
   <main class="page">
     <div class="hero">
-      <h1>401 LAB</h1>
-      <p>图像处理实验台</p>
+      <span class="hero-mark">401 LAB</span>
+      <h1 class="hero-title">图像处理实验台</h1>
+      <p class="hero-sub">图像处理实验台</p>
     </div>
 
     <div class="two-cols">
       <!-- 左侧：上传与预览区域（保留原有禁用逻辑，补充自动加载） -->
       <div class="card" id="upload">
-        <h2>相机拍摄图片</h2>
-        <form id="upload-form" onsubmit="return false;">
-          <div class="form-group">
-            <label for="file-upload">选择图片</label>
-            <input type="file" id="file-upload" accept="image/*" disabled>
-            <p class="status-text">已禁用上传，请等待主机端图片推送</p>
-          </div>
-          <div class="image-preview" id="image-preview">
-            <img id="latest-image" src="" alt="等待相机拍摄图片..." style="display: none;">
-            <span id="image-placeholder">暂无拍摄图片</span>
-          </div>
-          <div class="form-group">
-            <button type="submit" disabled>上传处理</button>
-          </div>
-        </form>
+        <div class="card-header">相机拍摄图片</div>
+        <div class="card-body">
+          <form id="upload-form" onsubmit="return false;">
+            <div class="form-group">
+              <p class="status-text">请等待主机端图片推送</p>
+            </div>
+            <div class="image-preview" id="image-preview">
+              <img id="latest-image" src="" alt="等待相机拍摄图片..." style="display: none;">
+              <span id="image-placeholder">暂无拍摄图片</span>
+            </div>
+          </form>
+        </div>
       </div>
 
       <!-- 右侧：处理结果区域 -->
       <div class="card" id="result">
-        <h2>识别分拣结果</h2>
-        <div class="status-text" id="result-status">等待结果加载...</div>
-        <div class="result-content" id="result-content">
-          暂无结果数据
+        <div class="card-header">识别分拣结果</div>
+        <div class="card-body">
+          <div class="status-text" id="result-status">等待结果加载...</div>
+          <div class="result-content" id="result-content">
+            暂无结果数据
+          </div>
         </div>
       </div>
     </div>
